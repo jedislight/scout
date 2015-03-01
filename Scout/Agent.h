@@ -16,7 +16,7 @@ public:
 	virtual ~Agent();
 
 	State* CurrentState();
-	virtual void Observe(void* data, unsigned int length);
+	virtual bool Observe(void* data, unsigned int length);
 	virtual void Act(unsigned int lookAhead = 100);
 
 	void SetExplorationFactor(double factor);

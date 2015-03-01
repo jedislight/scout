@@ -2,7 +2,7 @@
 
 #include <Windows.h>
 
-HBITMAP CopyBitmap(HBITMAP hbm, HDC hdcSrc) {
+HBITMAP CopyBitmap(HBITMAP hbm, HDC hdcSrc, int yStart) {
 	HDC hdcDst = CreateCompatibleDC(NULL);
 	HBITMAP hbmOld, hbmOld2, hbmNew;
 	BITMAP bm;
@@ -12,14 +12,14 @@ HBITMAP CopyBitmap(HBITMAP hbm, HDC hdcSrc) {
 		bm.bmBitsPixel,
 		NULL);
 	hbmOld2 = (HBITMAP)SelectObject(hdcDst, hbmNew);
-	BitBlt(hdcDst, 0, 0, bm.bmWidth, bm.bmHeight, hdcSrc, 0, 0, SRCCOPY);
+	BitBlt(hdcDst, 0, 0, bm.bmWidth, bm.bmHeight, hdcSrc, 0, yStart, SRCCOPY);
 	SelectObject(hdcSrc, hbmOld);
-	DeleteDC(hdcSrc);
+	ReleaseDC(NULL, hdcSrc);
 	DeleteDC(hdcDst);
 	return hbmNew;
 }
 
-void* ScreenGrabBlt(const char* windowName, int& outSize)
+void* ScreenGrabBlt(const char* windowName, int& outSize, double leadingIngore, double trailingIgnore)
 {
 	RECT rc;
 	HWND hwnd = FindWindow(NULL, windowName);    //the window can't be min
@@ -29,13 +29,20 @@ void* ScreenGrabBlt(const char* windowName, int& outSize)
 	}
 	GetClientRect(hwnd, &rc);
 
+	LONG clientHeight = rc.bottom - rc.top;
+	LONG skipTop = static_cast<LONG>(leadingIngore * clientHeight);
+	LONG skipBottom = static_cast<LONG>(trailingIgnore * clientHeight);
+
+	rc.top = rc.top + skipTop;
+	rc.bottom = rc.bottom - skipBottom;
+
 	//create
 	HDC hdcScreen = GetDC(NULL);
 	HDC hdc = CreateCompatibleDC(hdcScreen);
 	HBITMAP hbmp = CreateCompatibleBitmap(hdcScreen,
 		rc.right - rc.left, rc.bottom - rc.top);
 
-	HBITMAP obmp = CopyBitmap(hbmp, GetDC(hwnd));
+	HBITMAP obmp = CopyBitmap(hbmp, GetDC(hwnd), rc.top);
 
 	BITMAP bmp;
 	if (0 != GetObject(obmp, sizeof(BITMAP), &bmp))
@@ -52,9 +59,22 @@ void* ScreenGrabBlt(const char* windowName, int& outSize)
 		CloseClipboard();
 
 		//release
+		DeleteObject(hbmp);
+		DeleteObject(obmp);
 		DeleteDC(hdc);
 		DeleteObject(obmp);
 		ReleaseDC(NULL, hdcScreen);
 		return bigBytes;
+	}
+	else
+	{
+		//release
+		DeleteObject(hbmp);
+		DeleteObject(obmp);
+		DeleteDC(hdc);
+		DeleteObject(obmp);
+		ReleaseDC(NULL, hdcScreen);
+
+		return nullptr;
 	}
 }

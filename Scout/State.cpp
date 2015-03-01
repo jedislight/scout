@@ -63,7 +63,7 @@ State::ActionHistoryMap& State::ActionHistory()
 
 /* virtual */ double State::Value()
 {
-	return 1.0/m_observedCount;
+	return 1.0 - m_observedCount - m_actionHistory.size();
 }
 
 /* virtual */ unsigned int State::ObservedCount()

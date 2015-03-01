@@ -26,7 +26,7 @@ int main()
 	Agent agent(&subActions[0], buttonCount);
 	agent.SetExplorationFactor(100.0);
 
-	const double tickGoal = 1.0 / 10.0;
+	const double tickGoal = 1.0 / 60.0;
 	unsigned int lookAhead = 100;
 	while (true)
 	{
@@ -36,16 +36,18 @@ int main()
 		//screen grab observe
 
 		int size = 0;
-		char* image = reinterpret_cast<char*>(ScreenGrabBlt("Jnes 1.1", size));
+		double leadingIgnore = 0.15;
+		double trailingIgnore = 0.07;
+		char* image = reinterpret_cast<char*>(ScreenGrabBlt("Jnes 1.1", size, leadingIgnore, trailingIgnore));
 		if (image == nullptr)
 		{
 			std::cout << "waiting on window..." << std::endl;
 			continue;
 		}
 
-		agent.Observe(image, size);
+		bool newState = agent.Observe(image, size);
 		delete[] image;
-		std::cout << "StatesFound:" << agent.StateCount() << "\tSteps:" << agent.ActionsTaken() << "\tLookAhead:" << lookAhead << "\tCurrentState:" << agent.CurrentState()->Id();
+		std::cout << "StatesFound:" << agent.StateCount() << "\tSteps:" << agent.ActionsTaken() << "\tLookAhead:" << lookAhead << "\tCurrentState:" << agent.CurrentState()->Id() << (newState ? "*" : "");
 		std::cout << std::endl;
 		agent.Act(lookAhead);
 

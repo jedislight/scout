@@ -74,14 +74,16 @@ double Agent::GetStateValueRecursive(State* state, unsigned int lookAhead)
 	return result;
 }
 
-/* virtual */ void Agent::Observe(void* data, unsigned int length)
+/* virtual */ bool Agent::Observe(void* data, unsigned int length)
 {
+	bool foundNewState = false;
 	State* newState = new State(data, length);
 	auto existingStateIt = mStatesByHash.find(newState->Hash());
 	if (existingStateIt == mStatesByHash.end())
 	{
 		mStatesByHash[newState->Hash()] = newState;
 		newState->Finalize();
+		foundNewState = true;
 	}
 	else
 	{
@@ -95,6 +97,8 @@ double Agent::GetStateValueRecursive(State* state, unsigned int lookAhead)
 	}
 
 	mCurrentState = newState;
+
+	return foundNewState;
 }
 
 /* virtual */ void Agent::Act(unsigned int lookAhead)
@@ -125,9 +129,10 @@ double Agent::GetStateValueRecursive(State* state, unsigned int lookAhead)
 		}
 
 		double value = 0.0;
+		unsigned int lookAheadPerAction = lookAhead / pairIt.second.size();
 		for (State* state : pairIt.second)
 		{
-			value = GetStateValueRecursive(state, lookAhead);
+			value = GetStateValueRecursive(state, lookAheadPerAction);
 		}
 
 		possibleActions[action] = value;
