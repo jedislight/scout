@@ -29,7 +29,7 @@ private:
 	double GetStateValueRecursive(State* state, unsigned int lookAhead);
 	void SaveCurrentState();
 
-	std::map<unsigned int, State*> mStatesByHash;
+	std::map<unsigned long long, State*> mStatesByHash;
 	State* mCurrentState;
 	Action* mPreviousAction;
 	std::vector<SubAction*> mSubActions;

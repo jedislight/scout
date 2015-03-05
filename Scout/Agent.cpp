@@ -8,6 +8,7 @@
 #include <queue>
 #include <iostream>
 #include <fstream>
+#include <cfloat>
 
 #include <Windows.h>
 
@@ -63,7 +64,7 @@ double Agent::GetStateValueRecursive(State* state, unsigned int lookAhead)
 		stateQ.pop();
 		if (totalNodesPushed < lookAhead)
 		{
-			for (auto stateActionHistoryIt : state->ActionHistory())
+			for (auto& stateActionHistoryIt : state->ActionHistory())
 			{
 				for (State* reachableState : stateActionHistoryIt.second)
 				{
@@ -95,7 +96,7 @@ void Agent::SaveCurrentState()
 	stateFile << mCurrentState->ObservedCount() << std::endl;
 	stateFile << mCurrentState->Hash() << std::endl;
 	stateFile << mCurrentState->ActionHistory().size() << std::endl;
-	for (auto actionMapIt : mCurrentState->ActionHistory())
+	for (auto& actionMapIt : mCurrentState->ActionHistory())
 	{
 		Action* action = actionMapIt.first;
 		for (unsigned int subActionState : action->SubActionStates())
@@ -111,20 +112,12 @@ void Agent::SaveCurrentState()
 		stateFile << std::endl;
 	}
 	stateFile.close();
-
-	sprintf(fileName, "Agent\\%u.view_block", stateId);
-	std::ofstream viewFile(fileName, std::ios::out | std::ios::binary);
-	for (unsigned int i = 0; i < 256; ++i)
-	{
-		unsigned int block = mCurrentState->Data(i);
-		viewFile.write(reinterpret_cast<char*>(&block), sizeof(unsigned int));
-	}
-	viewFile.close();
 }
 
 void Agent::LoadFromFolder(const char* folder)
 {
 	std::map<State*, State*> statePointersByIdPatchTable;
+	std::cout << "Loading in data from folder: " << folder << std::endl;
 	for (unsigned int i = 0; i < UINT_MAX; ++i)
 	{
 		char filename[1024];
@@ -136,10 +129,15 @@ void Agent::LoadFromFolder(const char* folder)
 			break;
 		}
 
+		if (i % 1000 == 0)
+		{
+			std::cout << "Loading State " << i << std::endl;
+		}
+
 		unsigned int stateId;
 		double rawValue;
 		unsigned int observedCount;
-		unsigned int hash;
+		unsigned long long hash;
 		unsigned int expectedActionCount;
 		
 		inStateFile >> stateId;
@@ -151,7 +149,7 @@ void Agent::LoadFromFolder(const char* folder)
 		std::vector<std::vector<unsigned int>> actionHistroyActions;
 		std::vector<std::vector<unsigned int>> actionHistroyStateIds;
 		unsigned int actionsRead = 0;
-		for (int a = 0; a < expectedActionCount; ++a)
+		for (unsigned int a = 0; a < expectedActionCount; ++a)
 		{
 			actionHistroyActions.push_back(std::vector<unsigned int>());
 			for (unsigned int i = 0; i < this->mSubActions.size(); ++i)
@@ -178,11 +176,20 @@ void Agent::LoadFromFolder(const char* folder)
 		mStatesByHash[hash] = state;
 	}
 
-	if (mStatesByHash.size() > 0)
+	unsigned int numStates = mStatesByHash.size();
+	if (numStates > 0)
 	{
-		for (auto stateByHashIt : mStatesByHash)
+		unsigned int stateCount = 0;
+
+		std::cout << "Patching " << numStates << " State's Pointers";
+		for (auto& stateByHashIt : mStatesByHash)
 		{
 			State* state = stateByHashIt.second;
+			++stateCount;
+			if (stateCount % 1000 == 0)
+			{
+				std::cout << "Patching State " << stateCount << "/" << numStates << " Pointers" << std::endl;
+			}
 			state->PatchActionHistoryStatePointers(statePointersByIdPatchTable);
 		}
 	}
@@ -205,7 +212,7 @@ void Agent::LoadFromFolder(const char* folder)
 		newState = existingStateIt->second;
 	}
 
-	if (mCurrentState != nullptr)
+	if (mCurrentState != nullptr && mPreviousAction != nullptr)
 	{
 		mCurrentState->AddStateTransition(mPreviousAction, newState);
 		SaveCurrentState();
@@ -233,8 +240,9 @@ void Agent::LoadFromFolder(const char* folder)
 	Action* somethingNew = new Action(subActionStates, mSubActions.size());
 	delete subActionStates;
 
-	double highestKnownValue = 0.0;
-	for (auto pairIt : currentStateActionHistroy)
+	double highestKnownValue = -DBL_MAX;
+	double lowestKnownValue = DBL_MAX;
+	for (auto& pairIt : currentStateActionHistroy)
 	{
 		Action* action = pairIt.first;
 		auto subActionStates = action->SubActionStates();
@@ -254,18 +262,28 @@ void Agent::LoadFromFolder(const char* folder)
 
 		possibleActions[action] = value;
 		highestKnownValue = value > highestKnownValue ? value : highestKnownValue;
+		lowestKnownValue = value < lowestKnownValue ? value : lowestKnownValue;
+	}
+
+	if (highestKnownValue < lowestKnownValue)
+	{
+		highestKnownValue = 1.0;
+		lowestKnownValue = 0.0;
 	}
 
 	if (somethingNew != nullptr)
 	{
-		std::uniform_real_distribution<double> distribution(0.0, highestKnownValue*mExplorationFactor);
-		possibleActions[somethingNew] = distribution(mGenerator);
+		std::uniform_real_distribution<double> distribution(lowestKnownValue, highestKnownValue);
+		double randomValue = distribution(mGenerator);
+		double weightedPosativeValue = abs(randomValue) * mExplorationFactor;
+		double finalValue = randomValue + weightedPosativeValue;
+		possibleActions[somethingNew] = finalValue;
 	}
 
 	//select action
 	Action* bestAction = possibleActions.begin()->first;
 	double highestExpectedValue = possibleActions.begin()->second;
-	for (auto possibleActionIt : possibleActions)
+	for (auto& possibleActionIt : possibleActions)
 	{
 		Action* action = possibleActionIt.first;
 		double value = possibleActionIt.second;

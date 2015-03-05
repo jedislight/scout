@@ -13,25 +13,39 @@ State::State(void* data, unsigned int length)
 	, m_hash(0)
 {
 	const std::hash<unsigned int> uintHash;
+	const std::hash<unsigned long long> ulonglongHash;
 
-	memset(m_view, 0, sizeof(unsigned int) * 255);
+	unsigned int view[256];
+	memset(view, 0, sizeof(unsigned int) * 256);
 
 	double stride = length / 256.0;
-	for (int i = 0; i < 255; ++i)
+	std::vector<unsigned int> hashes;
+	for (int i = 0; i < 256; ++i)
 	{
 		unsigned int beginBlock = static_cast<unsigned int>(floor(i * stride));
 		unsigned int endBlock = static_cast<unsigned int>(ceil((i + 1) * stride));
 
-		m_view[i] = NormalizeViewBlock(static_cast<char*>(data)+beginBlock, endBlock - beginBlock);
-		m_hash += uintHash(m_view[i]);
-	}	
+		view[i] = NormalizeViewBlock(static_cast<char*>(data)+beginBlock, endBlock - beginBlock);
+		hashes.push_back(uintHash(view[i]));
+	}
+
+	unsigned int simpleHashCombine = hashes[0];
+	unsigned int hashReduceResult = hashes[0];
+	for (int i = 1; i < 256; ++i)
+	{
+		simpleHashCombine += hashes[i];
+		unsigned long long hashReduce = hashes[i] + (static_cast<unsigned long long>(hashReduceResult) << 32);
+		hashReduceResult = ulonglongHash(hashReduce);
+	}
+	m_hash = simpleHashCombine + (static_cast<unsigned long long>(hashReduceResult) << 32);
 }
 
-State::State(unsigned int stateId, double rawValue, unsigned int observedCount, unsigned int hash, std::vector<std::vector<unsigned int>> actionHistroyActions, std::vector<std::vector<unsigned int>>actionHistroyStateIds)
+State::State(unsigned int stateId, double rawValue, unsigned int observedCount, unsigned long long hash, std::vector<std::vector<unsigned int>> actionHistroyActions, std::vector<std::vector<unsigned int>>actionHistroyStateIds)
 	: m_value(rawValue)
 	, m_observedCount(observedCount)
 	, m_actionHistory()
 	, m_hash(hash)
+	, m_stateId(stateId)
 {
 	for (unsigned int i = 0; i < actionHistroyActions.size(); ++i)
 	{
@@ -45,7 +59,7 @@ State::State(unsigned int stateId, double rawValue, unsigned int observedCount, 
 	}
 }
 
-void State::PatchActionHistoryStatePointers(std::map<State*, State*> statePointersByIdPatchTable)
+void State::PatchActionHistoryStatePointers(std::map<State*, State*>& statePointersByIdPatchTable)
 {
 	for (auto& actionHistoryMapIt : m_actionHistory)
 	{
@@ -77,12 +91,7 @@ State::~State()
 {
 }
 
-unsigned int State::Data(unsigned int index) const
-{
-	return m_view[index];
-}
-
-unsigned int State::Hash() const
+unsigned long long State::Hash() const
 {
 	return m_hash;
 }
