@@ -24,10 +24,12 @@ int main()
 	}
 
 	Agent agent(&subActions[0], buttonCount);
+	agent.LoadFromFolder(".\\Agent");
 	agent.SetExplorationFactor(100.0);
 
-	const double tickGoal = 1.0 / 60.0;
+	const double tickGoal = 1.0 / 30.0;
 	unsigned int lookAhead = 100;
+	bool hasFoundWindow = false;
 	while (true)
 	{
 		std::clock_t start;
@@ -41,9 +43,14 @@ int main()
 		char* image = reinterpret_cast<char*>(ScreenGrabBlt("Jnes 1.1", size, leadingIgnore, trailingIgnore));
 		if (image == nullptr)
 		{
+			if (hasFoundWindow)
+			{
+				break;
+			}
 			std::cout << "waiting on window..." << std::endl;
 			continue;
 		}
+		hasFoundWindow = true;
 
 		bool newState = agent.Observe(image, size);
 		delete[] image;
@@ -54,6 +61,7 @@ int main()
 		double tickActual = (std::clock() - start) / (double)CLOCKS_PER_SEC;
 		if (tickActual < tickGoal*.95)
 		{
+			Sleep((tickGoal - tickActual)*1000);
 			++lookAhead;
 		}
 		else if (tickActual > tickGoal * 1.05)

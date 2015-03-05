@@ -6,9 +6,14 @@
 #include <algorithm>
 #include <time.h>
 #include <queue>
+#include <iostream>
+#include <fstream>
+
+#include <Windows.h>
 
 Agent::Agent(SubAction** subActions, unsigned int length)
 {
+	CreateDirectory("Agent", NULL);
 	for (size_t i = 0; i < length; i++)
 	{
 		mSubActions.push_back(subActions[i]);
@@ -62,6 +67,11 @@ double Agent::GetStateValueRecursive(State* state, unsigned int lookAhead)
 			{
 				for (State* reachableState : stateActionHistoryIt.second)
 				{
+					if (reachableState == nullptr)
+					{
+						static int x = 0;
+						++x;
+					}
 					stateQ.push(reachableState);
 					totalNodesPushed += 1;
 				}
@@ -72,6 +82,110 @@ double Agent::GetStateValueRecursive(State* state, unsigned int lookAhead)
 	}
 
 	return result;
+}
+
+void Agent::SaveCurrentState()
+{
+	unsigned int stateId = mCurrentState->Id();
+	char fileName[1024]{};
+	sprintf(fileName, "Agent\\%u.state", stateId);
+	std::ofstream stateFile(fileName, std::ios::out);
+	stateFile << stateId << std::endl;
+	stateFile << mCurrentState->ValueRaw() << std::endl;
+	stateFile << mCurrentState->ObservedCount() << std::endl;
+	stateFile << mCurrentState->Hash() << std::endl;
+	stateFile << mCurrentState->ActionHistory().size() << std::endl;
+	for (auto actionMapIt : mCurrentState->ActionHistory())
+	{
+		Action* action = actionMapIt.first;
+		for (unsigned int subActionState : action->SubActionStates())
+		{
+			stateFile << subActionState << " ";
+		}
+
+		stateFile << actionMapIt.second.size();
+		for (State* state : actionMapIt.second)
+		{
+			stateFile << " " << state->Id();
+		}
+		stateFile << std::endl;
+	}
+	stateFile.close();
+
+	sprintf(fileName, "Agent\\%u.view_block", stateId);
+	std::ofstream viewFile(fileName, std::ios::out | std::ios::binary);
+	for (unsigned int i = 0; i < 256; ++i)
+	{
+		unsigned int block = mCurrentState->Data(i);
+		viewFile.write(reinterpret_cast<char*>(&block), sizeof(unsigned int));
+	}
+	viewFile.close();
+}
+
+void Agent::LoadFromFolder(const char* folder)
+{
+	std::map<State*, State*> statePointersByIdPatchTable;
+	for (unsigned int i = 0; i < UINT_MAX; ++i)
+	{
+		char filename[1024];
+		sprintf(filename, "Agent\\%u.state", i);
+		std::ifstream inStateFile(filename, std::ios::in);
+		if (!inStateFile.good())
+		{
+			State::SetNextStateId(i);
+			break;
+		}
+
+		unsigned int stateId;
+		double rawValue;
+		unsigned int observedCount;
+		unsigned int hash;
+		unsigned int expectedActionCount;
+		
+		inStateFile >> stateId;
+		inStateFile >> rawValue;
+		inStateFile >> observedCount;
+		inStateFile >> hash;
+		inStateFile >> expectedActionCount;
+
+		std::vector<std::vector<unsigned int>> actionHistroyActions;
+		std::vector<std::vector<unsigned int>> actionHistroyStateIds;
+		unsigned int actionsRead = 0;
+		for (int a = 0; a < expectedActionCount; ++a)
+		{
+			actionHistroyActions.push_back(std::vector<unsigned int>());
+			for (unsigned int i = 0; i < this->mSubActions.size(); ++i)
+			{
+				unsigned int subActionState;
+				inStateFile >> subActionState;
+				actionHistroyActions[actionsRead].push_back(subActionState);
+			}
+			unsigned int stateTransitionCount;
+			inStateFile >> stateTransitionCount;
+			actionHistroyStateIds.push_back(std::vector<unsigned int>());
+			for (unsigned int i = 0; i < stateTransitionCount; ++i)
+			{
+				unsigned int stateId;
+				inStateFile >> stateId;
+				actionHistroyStateIds[actionsRead].push_back(stateId);
+			}
+			++actionsRead;
+		}
+
+		State* state = new State(stateId, rawValue, observedCount, hash, actionHistroyActions, actionHistroyStateIds);
+		char* nullState = nullptr;
+		statePointersByIdPatchTable[reinterpret_cast<State*>(nullState + stateId)] = state;
+		mStatesByHash[hash] = state;
+	}
+
+	if (mStatesByHash.size() > 0)
+	{
+		for (auto stateByHashIt : mStatesByHash)
+		{
+			State* state = stateByHashIt.second;
+			state->PatchActionHistoryStatePointers(statePointersByIdPatchTable);
+		}
+	}
 }
 
 /* virtual */ bool Agent::Observe(void* data, unsigned int length)
@@ -94,9 +208,12 @@ double Agent::GetStateValueRecursive(State* state, unsigned int lookAhead)
 	if (mCurrentState != nullptr)
 	{
 		mCurrentState->AddStateTransition(mPreviousAction, newState);
+		SaveCurrentState();
 	}
 
 	mCurrentState = newState;
+
+	SaveCurrentState();
 
 	return foundNewState;
 }
@@ -136,7 +253,7 @@ double Agent::GetStateValueRecursive(State* state, unsigned int lookAhead)
 		}
 
 		possibleActions[action] = value;
-		highestKnownValue = std::max(value, highestKnownValue);
+		highestKnownValue = value > highestKnownValue ? value : highestKnownValue;
 	}
 
 	if (somethingNew != nullptr)

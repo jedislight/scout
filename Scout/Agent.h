@@ -22,10 +22,12 @@ public:
 	void SetExplorationFactor(double factor);
 	unsigned int StateCount();
 	unsigned int ActionsTaken();
-	
 
+	void LoadFromFolder(const char* folder);
+	
 private:
 	double GetStateValueRecursive(State* state, unsigned int lookAhead);
+	void SaveCurrentState();
 
 	std::map<unsigned int, State*> mStatesByHash;
 	State* mCurrentState;

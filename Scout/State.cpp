@@ -1,6 +1,8 @@
 #include "State.h"
+#include "Action.h"
 #include <math.h>
 #include <functional>
+
 
 unsigned int State::ms_nextStateId = 0;
 
@@ -25,6 +27,51 @@ State::State(void* data, unsigned int length)
 	}	
 }
 
+State::State(unsigned int stateId, double rawValue, unsigned int observedCount, unsigned int hash, std::vector<std::vector<unsigned int>> actionHistroyActions, std::vector<std::vector<unsigned int>>actionHistroyStateIds)
+	: m_value(rawValue)
+	, m_observedCount(observedCount)
+	, m_actionHistory()
+	, m_hash(hash)
+{
+	for (unsigned int i = 0; i < actionHistroyActions.size(); ++i)
+	{
+		Action* action = new Action(actionHistroyActions[i].data(), actionHistroyActions[i].size());
+		char* nullState = nullptr;
+
+		for (unsigned int j = 0; j < actionHistroyStateIds[i].size(); j++)
+		{
+			m_actionHistory[action].insert(reinterpret_cast<State*>(nullState + actionHistroyStateIds[i][j]));
+		}
+	}
+}
+
+void State::PatchActionHistoryStatePointers(std::map<State*, State*> statePointersByIdPatchTable)
+{
+	for (auto& actionHistoryMapIt : m_actionHistory)
+	{
+		std::vector<State*> toConvert;
+		for (State* state : actionHistoryMapIt.second)
+		{
+			toConvert.push_back(state);
+		}
+		actionHistoryMapIt.second.clear();
+		
+		for (unsigned int i = 0; i < toConvert.size(); i++)
+		{
+			toConvert[i] = statePointersByIdPatchTable[toConvert[i]];
+		}
+
+		for (State* state : toConvert)
+		{
+			actionHistoryMapIt.second.insert(state);
+			if (state == nullptr)
+			{
+				static int x = 0;
+				++x;
+			}
+		}
+	}
+}
 
 State::~State()
 {
@@ -47,6 +94,11 @@ unsigned int State::Id() const
 
 void State::AddStateTransition(Action* action, State* state)
 {
+	if (state == nullptr)
+	{
+		static int x = 0;
+		++x;
+	}
 	m_actionHistory[action].insert(state);
 	++state->m_observedCount;
 }
@@ -61,9 +113,19 @@ State::ActionHistoryMap& State::ActionHistory()
 	return m_actionHistory;
 }
 
+/* static */ void State::SetNextStateId(unsigned int nextId)
+{
+	ms_nextStateId = nextId;
+}
+
 /* virtual */ double State::Value()
 {
-	return 1.0 - m_observedCount - m_actionHistory.size();
+	return ValueRaw() - m_observedCount - m_actionHistory.size();
+}
+
+/* virtual */ double State::ValueRaw()
+{
+	return 1.0;
 }
 
 /* virtual */ unsigned int State::ObservedCount()
